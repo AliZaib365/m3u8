@@ -22,13 +22,10 @@ export default function WallpaperSlider() {
         const data = await response.json();
         
         if (data.success && data.playlists) {
-          // Map the API response to our expected format
           setWallpapers(data.playlists.map((item, index) => ({
             id: index + 1,
             wallpaper: item.wallpaper,
             url: item.path,
-            // You can add a poster URL here if available
-            // poster: `https://example.com/posters/${item.wallpaper}.jpg`
           })));
         } else {
           throw new Error('Invalid API response format');
@@ -104,7 +101,6 @@ export default function WallpaperSlider() {
             );
           })}
           
-          {/* Navigation buttons */}
           <div className="swiper-button-prev absolute left-4 top-1/2 -translate-y-1/2 z-10 w-14 h-14 bg-black/70 rounded-full flex items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-purple-600 hover:scale-110 backdrop-blur-sm">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
@@ -133,20 +129,50 @@ export default function WallpaperSlider() {
 
 function VideoPlayer({ src, poster, isHls, wallpaperName }) {
   const videoRef = useRef(null);
+  const [hlsInstance, setHlsInstance] = useState(null);
+  const [qualities, setQualities] = useState([]);
+  const [currentQuality, setCurrentQuality] = useState('auto');
+  const [showQualityMenu, setShowQualityMenu] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => {
     if (!videoRef.current) return;
 
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
+    videoRef.current.addEventListener('play', handlePlay);
+    videoRef.current.addEventListener('pause', handlePause);
+
     if (isHls) {
       if (Hls.isSupported()) {
         const hls = new Hls();
+        setHlsInstance(hls);
+
         hls.loadSource(src);
         hls.attachMedia(videoRef.current);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        
+        hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
+          const levels = data.levels.map((level, index) => ({
+            id: index,
+            height: level.height,
+            width: level.width,
+            bitrate: level.bitrate,
+            name: `${level.height}p`
+          }));
+          
+          setQualities([
+            { id: 'auto', name: 'Auto' },
+            ...levels
+          ]);
+          
           videoRef.current.play().catch(e => console.log('Autoplay prevented:', e));
         });
+
         return () => {
           hls.destroy();
+          videoRef.current?.removeEventListener('play', handlePlay);
+          videoRef.current?.removeEventListener('pause', handlePause);
         };
       } else if (videoRef.current.canPlayType('application/vnd.apple.mpegurl')) {
         // Native HLS support (Safari)
@@ -154,14 +180,44 @@ function VideoPlayer({ src, poster, isHls, wallpaperName }) {
         videoRef.current.addEventListener('loadedmetadata', () => {
           videoRef.current.play().catch(e => console.log('Autoplay prevented:', e));
         });
+        return () => {
+          videoRef.current?.removeEventListener('play', handlePlay);
+          videoRef.current?.removeEventListener('pause', handlePause);
+        };
       }
     } else {
       videoRef.current.src = src;
       videoRef.current.addEventListener('loadedmetadata', () => {
         videoRef.current.play().catch(e => console.log('Autoplay prevented:', e));
       });
+      return () => {
+        videoRef.current?.removeEventListener('play', handlePlay);
+        videoRef.current?.removeEventListener('pause', handlePause);
+      };
     }
   }, [src, isHls]);
+
+  const changeQuality = (levelId) => {
+    if (hlsInstance) {
+      if (levelId === 'auto') {
+        hlsInstance.currentLevel = -1;
+      } else {
+        hlsInstance.currentLevel = parseInt(levelId);
+      }
+      setCurrentQuality(levelId);
+      setShowQualityMenu(false);
+    }
+  };
+
+  const togglePlayPause = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        videoRef.current.pause();
+      } else {
+        videoRef.current.play().catch(e => console.log('Play failed:', e));
+      }
+    }
+  };
 
   return (
     <div className="relative w-full h-full overflow-hidden">
@@ -176,10 +232,57 @@ function VideoPlayer({ src, poster, isHls, wallpaperName }) {
         playsInline
         controls={false}
       />
-      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-500 flex items-end p-6">
-        <span className="text-white font-medium text-sm bg-black/70 px-3 py-2 rounded-lg backdrop-blur-sm">
-          ▶️ {wallpaperName || 'HLS Video Wallpaper'}
-        </span>
+      
+      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-0 hover:opacity-100 transition-opacity duration-500 flex items-end justify-between p-6">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={togglePlayPause}
+            className="text-white bg-black/70 p-2 rounded-full backdrop-blur-sm hover:bg-purple-600 transition-colors"
+          >
+            {isPlaying ? (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zM7 8a1 1 0 012 0v4a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
+          <span className="text-white font-medium text-sm bg-black/70 px-3 py-2 rounded-lg backdrop-blur-sm">
+            {wallpaperName || 'Video Wallpaper'}
+          </span>
+        </div>
+        
+        {isHls && Hls.isSupported() && qualities.length > 0 && (
+          <div className="relative">
+            <button 
+              onClick={() => setShowQualityMenu(!showQualityMenu)}
+              className="text-white font-medium text-sm bg-black/70 px-3 py-2 rounded-lg backdrop-blur-sm hover:bg-black/90 transition-colors flex items-center gap-1"
+            >
+              <span>Quality: {currentQuality === 'auto' ? 'Auto' : qualities.find(q => q.id === currentQuality)?.name || 'Auto'}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            {showQualityMenu && (
+              <div className="absolute bottom-full right-0 mb-2 bg-black/80 backdrop-blur-sm rounded-lg overflow-hidden shadow-lg z-20 min-w-[120px]">
+                {qualities.map((quality) => (
+                  <button
+                    key={quality.id}
+                    onClick={() => changeQuality(quality.id)}
+                    className={`block w-full text-left px-4 py-2 text-sm text-white hover:bg-purple-600/80 transition-colors ${
+                      currentQuality === quality.id ? 'bg-purple-600/80' : ''
+                    }`}
+                  >
+                    {quality.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
